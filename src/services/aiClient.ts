@@ -1,3 +1,6 @@
+import type { AICapability, AIProtocolId } from './aiProtocolTypes'
+import { buildProtocolRequest, getProtocolEndpoint } from './aiProtocolRegistry'
+
 export type ReasoningEffort = `low` | `medium` | `high`
 
 export interface AIParameters {
@@ -219,6 +222,7 @@ export class AIClient {
   constructor(
     private readonly baseUrl: string,
     private readonly apiKey: string,
+    private readonly protocol: AIProtocolId = `openai-chat-completions`,
   ) {}
 
   private headers(extra?: HeadersInit) {
@@ -237,6 +241,16 @@ export class AIClient {
     return response
   }
 
+  async createCapabilityRequest(capability: AICapability, input: unknown) {
+    const path = getProtocolEndpoint(this.protocol, capability)
+    const body = buildProtocolRequest(this.protocol, capability, input)
+    return this.request(path, {
+      method: `POST`,
+      headers: this.headers({ 'Content-Type': `application/json` }),
+      body: JSON.stringify(body),
+    })
+  }
+
   async listModels() {
     const response = await this.request(`/v1/models`, {
       headers: this.headers({ 'Content-Type': `application/json` }),
@@ -245,11 +259,7 @@ export class AIClient {
   }
 
   createChatCompletion(input: ChatCompletionInput) {
-    return this.request(`/v1/chat/completions`, {
-      method: `POST`,
-      headers: this.headers({ 'Content-Type': `application/json` }),
-      body: JSON.stringify(buildChatCompletionBody(input)),
-    })
+    return this.createCapabilityRequest(`chat`, input)
   }
 
   createCompletion(input: CompletionInput) {

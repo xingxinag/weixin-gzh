@@ -57,4 +57,12 @@ describe(`useAIStore migration`, () => {
     expect(store.connection.apiKey).toBe(``)
     expect(client).toBeTruthy()
   })
+
+  it(`switches supported capabilities when protocol changes`, () => {
+    const store = useAIStore()
+    store.connection.protocol = `anthropic-native`
+
+    expect(store.supportedCapabilities).toContain(`chat`)
+    expect(store.supportedCapabilities).not.toContain(`embedding`)
+  })
 })

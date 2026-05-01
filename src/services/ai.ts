@@ -10,6 +10,7 @@ function validateAndFixModel(model: string): string {
 // 处理流式响应的函数
 async function processStreamResponse(
   response: Response,
+  protocol: string,
   onToken?: (token: string) => void,
   onFinish?: () => void,
 ) {
@@ -41,7 +42,11 @@ async function processStreamResponse(
 
         try {
           const parsed = JSON.parse(data)
-          const token = parsed.choices[0]?.delta?.content
+          const token = protocol === `openai-responses`
+            ? parsed.output?.[0]?.content?.[0]?.text || parsed.delta || parsed.response?.output_text
+            : protocol === `anthropic-native`
+              ? parsed.delta?.text || parsed.content_block?.text || parsed.content_block_delta?.delta?.text
+              : parsed.choices?.[0]?.delta?.content || parsed.candidates?.[0]?.content?.parts?.[0]?.text
           if (token) {
             onToken?.(token)
           }
@@ -74,7 +79,7 @@ export async function streamAIContent({
   aiStore.setGenerating(true)
 
   try {
-    if (!aiStore.apiKey) {
+    if (!aiStore.apiKey && aiStore.connection.mode !== `worker-proxy`) {
       throw new Error(`请先设置 API Key`)
     }
 
@@ -93,7 +98,8 @@ export async function streamAIContent({
     const validatedModel = validateAndFixModel(selectedModel)
     console.log(`验证后使用的模型：${validatedModel}`)
 
-    const client = new AIClient(aiStore.apiDomain, aiStore.apiKey)
+    const client = new AIClient(aiStore.apiDomain, aiStore.apiKey, aiStore.connection.protocol)
+    const streamEnabled = aiStore.connection.protocol === `openai-chat-completions`
     const response = await client.createChatCompletion({
       model: validatedModel,
       messages: [
@@ -109,10 +115,25 @@ export async function streamAIContent({
         ).filter(msg => msg.content),
       ],
       parameters: aiStore.parameters,
-      stream: true,
+      stream: streamEnabled,
     })
 
-    return processStreamResponse(response, onToken, onFinish)
+    if (!streamEnabled) {
+      const payload = await response.json() as any
+      const text = payload.output?.[0]?.content?.[0]?.text
+        || payload.content?.[0]?.text
+        || payload.candidates?.[0]?.content?.parts?.map((part: any) => part.text).filter(Boolean).join(``)
+        || payload.choices?.[0]?.message?.content
+        || ``
+      if (text) {
+        onToken?.(text)
+      }
+      aiStore.setGenerating(false)
+      onFinish?.()
+      return
+    }
+
+    return processStreamResponse(response, aiStore.connection.protocol, onToken, onFinish)
   }
   catch (error) {
     aiStore.setGenerating(false)
@@ -236,15 +257,19 @@ export async function callAI(prompt: string): Promise<string> {
     const validatedModel = validateAndFixModel(selectedModel)
     console.log(`callAI函数 - 验证后的模型：${validatedModel}`)
 
-    const client = new AIClient(aiStore.apiDomain, aiStore.apiKey)
+    const client = new AIClient(aiStore.apiDomain, aiStore.apiKey, aiStore.connection.protocol)
     const response = await client.createChatCompletion({
       model: validatedModel,
       messages: [{ role: `user`, content: prompt }],
       parameters: aiStore.parameters,
     })
 
-    const data = await response.json()
-    return data.choices[0].message.content
+    const data = await response.json() as any
+    return data.output?.[0]?.content?.[0]?.text
+      || data.content?.[0]?.text
+      || data.candidates?.[0]?.content?.parts?.map((part: any) => part.text).filter(Boolean).join(``)
+      || data.choices?.[0]?.message?.content
+      || ``
   }
   catch (error) {
     console.error(`调用 AI 服务失败:`, error)

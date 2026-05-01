@@ -2,6 +2,71 @@
 
 ## 部署说明
 
+## AI 协议支持
+
+当前版本不再只支持单一 `openai-compatible` 聊天格式，而是已经扩展为多协议 AI 提供商模式。
+
+目前支持的协议包括：
+
+- `OpenAI ChatCompletions`
+- `OpenAI Responses`
+- `Claude 原生格式`
+- `Gemini 原生格式`
+- `Gemini 媒体识别`
+
+### 已真正接入主流程的能力
+
+- 多协议文本聊天生成
+- 编辑器主 AI 生成流程按协议切换真实请求格式
+- Gemini 媒体识别入口
+
+### 当前主要作为能力测试入口保留的能力
+
+- `embeddings`
+- `rerank`
+- `moderations`
+- `image`
+- `speech`
+- `transcription`
+- `video`
+- `realtime`
+
+这表示：
+
+- 这些能力已经有真实请求实现和设置页测试入口
+- 但它们还没有全部都像“正文 AI 生成”那样完整融入编辑器业务流程
+
+### 协议与能力关系
+
+- `OpenAI ChatCompletions`
+  - 适合标准 OpenAI 兼容聊天与多能力接口
+- `OpenAI Responses`
+  - 适合走 `/v1/responses` 的新式响应协议
+- `Claude 原生格式`
+  - 适合直接对接原生 Claude 风格聊天接口
+- `Gemini 原生格式`
+  - 适合 Gemini 文本聊天
+- `Gemini 媒体识别`
+  - 适合图片/媒体理解类输入
+
+### 设置页现在会真实影响什么
+
+AI 设置页中的“协议格式”不是展示字段，当前会真实影响：
+
+- 请求 endpoint
+- 请求 body 结构
+- 主聊天生成流程
+- 能力测试卡片显示范围
+- Gemini 媒体识别入口显示
+- 协议支持的模型映射范围
+
+### 什么时候选哪个协议
+
+- 如果你的网关兼容传统 OpenAI 聊天接口：选 `OpenAI ChatCompletions`
+- 如果你的网关更推荐 `/v1/responses`：选 `OpenAI Responses`
+- 如果你直连 Claude 原生风格接口：选 `Claude 原生格式`
+- 如果你直连 Gemini 原生文本或图像识别接口：选 `Gemini 原生格式`
+
 当前项目已经适配以下部署方式：
 
 - `Vercel`

@@ -1,19 +1,22 @@
 import type { AIParameters as AIClientParameters, ReasoningEffort } from '@/services/aiClient'
+import type { AICapability, AIProtocolId } from '@/services/aiProtocolTypes'
 import type { Model } from '../services/aiModels'
 import { useStorage } from '@vueuse/core'
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { AIClient, getCapabilityEndpoint, toNumber } from '../services/aiClient'
 import { aiModelsService } from '../services/aiModels'
+import { getProtocolDefinition, listProtocols } from '../services/aiProtocolRegistry'
 
 export type ModelCapability = `chatModel` | `completionModel` | `embeddingModel` | `rerankModel` | `moderationModel` | `imageModel` | `speechModel` | `transcriptionModel` | `videoModel` | `realtimeModel`
-export type CapabilityTest = `models` | `chat` | `embeddings` | `moderations` | `images` | `speech` | `video` | `realtime`
+export type CapabilityTest = `models` | `chat` | `mediaRecognition` | `embeddings` | `moderations` | `images` | `speech` | `video` | `realtime`
 
 export interface AIConnectionSettings {
   baseUrl: string
   apiKey: string
   apiStyle: `openai-compatible`
   mode: `direct` | `worker-proxy`
+  protocol: AIProtocolId
 }
 
 export interface AIDefaultModels {
@@ -63,6 +66,7 @@ function createConnectionDefaults(): AIConnectionSettings {
     apiKey: readLegacyString(`md-ai-api-key`, legacy.apiKey || ``),
     apiStyle: `openai-compatible`,
     mode: legacy.connection?.mode === `worker-proxy` ? `worker-proxy` : `direct`,
+    protocol: legacy.connection?.protocol || `openai-chat-completions`,
   }
 }
 
@@ -143,10 +147,12 @@ export const useAIStore = defineStore(`ai`, () => {
       throw new Error(`请先设置 API 地址`)
     }
 
-    return new AIClient(connection.value.baseUrl, connection.value.mode === `worker-proxy` ? `proxy-mode` : connection.value.apiKey)
+    return new AIClient(connection.value.baseUrl, connection.value.mode === `worker-proxy` ? `proxy-mode` : connection.value.apiKey, connection.value.protocol)
   }
 
   const usingProxy = computed(() => connection.value.mode === `worker-proxy`)
+  const availableProtocols = computed(() => listProtocols())
+  const supportedCapabilities = computed(() => getProtocolDefinition(connection.value.protocol).supportedCapabilities)
 
   const apiKey = computed({
     get: () => connection.value.apiKey,
@@ -242,6 +248,10 @@ export const useAIStore = defineStore(`ai`, () => {
     connection.value.mode = mode
   }
 
+  function setProtocol(protocol: AIProtocolId) {
+    connection.value.protocol = protocol
+  }
+
   function setTemperature(value: number) {
     temperature.value = value
   }
@@ -326,6 +336,16 @@ export const useAIStore = defineStore(`ai`, () => {
     return getCapabilityEndpoint(connection.value.baseUrl, path)
   }
 
+  async function recognizeMedia(input: { model: string, inputText: string, media: Array<{ mimeType: string, data: string }> }) {
+    const client = getClient()
+    const response = await client.createCapabilityRequest(`mediaRecognition`, input)
+    return response.json()
+  }
+
+  function protocolSupports(capability: AICapability) {
+    return supportedCapabilities.value.includes(capability)
+  }
+
   async function runCapabilityTest(capability: CapabilityTest) {
     isTestingCapability.value = {
       ...isTestingCapability.value,
@@ -349,6 +369,15 @@ export const useAIStore = defineStore(`ai`, () => {
           })
           const payload = await response.json() as any
           result = payload.choices?.[0]?.message?.content || `聊天接口调用成功`
+          break
+        }
+        case `mediaRecognition`: {
+          const payload = await recognizeMedia({
+            model: defaults.value.chatModel || getCurrentModelId(),
+            inputText: `Describe this image`,
+            media: [{ mimeType: `image/png`, data: `iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4////fwAJ+wP9KobjigAAAABJRU5ErkJggg==` }],
+          }) as any
+          result = payload.candidates?.[0]?.content?.parts?.map((part: any) => part.text).filter(Boolean).join(``) || `Gemini 媒体识别调用成功`
           break
         }
         case `embeddings`: {
@@ -439,6 +468,8 @@ export const useAIStore = defineStore(`ai`, () => {
   return {
     connection,
     usingProxy,
+    availableProtocols,
+    supportedCapabilities,
     defaults,
     parameters,
     apiKey,
@@ -461,6 +492,7 @@ export const useAIStore = defineStore(`ai`, () => {
     setCustomModel,
     setApiDomain,
     setConnectionMode,
+    setProtocol,
     addPresetWord,
     removePresetWord,
     setTemperature,
@@ -476,5 +508,7 @@ export const useAIStore = defineStore(`ai`, () => {
     runCapabilityTest,
     getClient,
     getResolvedEndpoint,
+    protocolSupports,
+    recognizeMedia,
   }
 })

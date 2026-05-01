@@ -3,7 +3,7 @@ import type { CapabilityTest, ModelCapability } from '@/stores/ai'
 import { useAIStore } from '@/stores'
 import { BrainCircuit } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { Button } from '../../../components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../../../components/ui/dialog'
 import { Input } from '../../../components/ui/input'
@@ -21,6 +21,8 @@ const {
   apiDomain,
   connection,
   usingProxy,
+  availableProtocols,
+  supportedCapabilities,
   defaults,
   parameters,
   presetWords,
@@ -35,6 +37,9 @@ const {
 
 const activeTab = ref(`connection`)
 const customModelName = ref(``)
+const mediaPrompt = ref(`Describe this image`)
+const mediaRecognitionResult = ref(``)
+const selectedMedia = ref<{ mimeType: string, data: string } | null>(null)
 
 const modelFields: Array<{ key: ModelCapability, label: string }> = [
   { key: `chatModel`, label: `聊天模型` },
@@ -52,6 +57,7 @@ const modelFields: Array<{ key: ModelCapability, label: string }> = [
 const capabilityTests: Array<{ key: CapabilityTest, label: string, endpoint: string }> = [
   { key: `models`, label: `模型列表`, endpoint: `/v1/models` },
   { key: `chat`, label: `聊天`, endpoint: `/v1/chat/completions` },
+  { key: `mediaRecognition`, label: `媒体识别`, endpoint: `/v1beta/models:generateContent` },
   { key: `embeddings`, label: `嵌入`, endpoint: `/v1/embeddings` },
   { key: `moderations`, label: `审查`, endpoint: `/v1/moderations` },
   { key: `images`, label: `图像`, endpoint: `/v1/images/generations` },
@@ -59,6 +65,33 @@ const capabilityTests: Array<{ key: CapabilityTest, label: string, endpoint: str
   { key: `video`, label: `视频`, endpoint: `/v1/videos` },
   { key: `realtime`, label: `实时语音`, endpoint: `/v1/realtime/sessions` },
 ]
+
+const capabilityMap: Record<string, string> = {
+  chat: `chat`,
+  mediaRecognition: `mediaRecognition`,
+  embeddings: `embedding`,
+  moderations: `moderation`,
+  images: `image`,
+  speech: `speech`,
+  video: `video`,
+  realtime: `realtime`,
+}
+
+const modelFieldCapabilityMap: Record<ModelCapability, string> = {
+  chatModel: `chat`,
+  completionModel: `chat`,
+  embeddingModel: `embedding`,
+  rerankModel: `rerank`,
+  moderationModel: `moderation`,
+  imageModel: `image`,
+  speechModel: `speech`,
+  transcriptionModel: `transcription`,
+  videoModel: `video`,
+  realtimeModel: `realtime`,
+}
+
+const visibleModelFields = computed(() => modelFields.filter(field => aiStore.protocolSupports(modelFieldCapabilityMap[field.key] as any)))
+const visibleCapabilityTests = computed(() => capabilityTests.filter(item => item.key === `models` || aiStore.protocolSupports(capabilityMap[item.key] as any)))
 
 function resolveEndpoint(path: string) {
   return aiStore.getResolvedEndpoint(path)
@@ -109,6 +142,52 @@ async function runCapabilityTest(key: CapabilityTest) {
     toast({
       title: `能力测试失败`,
       description: e instanceof Error ? e.message : `请求失败`,
+      variant: `destructive`,
+    })
+  }
+}
+
+async function handleMediaFileChange(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) {
+    selectedMedia.value = null
+    return
+  }
+
+  const reader = new FileReader()
+  reader.onload = () => {
+    const result = typeof reader.result === `string` ? reader.result.split(`,`)[1] || `` : ``
+    selectedMedia.value = {
+      mimeType: file.type || `image/png`,
+      data: result,
+    }
+  }
+  reader.readAsDataURL(file)
+}
+
+async function runMediaRecognition() {
+  if (!selectedMedia.value) {
+    toast({
+      title: `媒体识别失败`,
+      description: `请先选择图片文件`,
+      variant: `destructive`,
+    })
+    return
+  }
+
+  try {
+    const payload = await aiStore.recognizeMedia({
+      model: defaults.value.chatModel,
+      inputText: mediaPrompt.value,
+      media: [selectedMedia.value],
+    }) as any
+    mediaRecognitionResult.value = payload.candidates?.[0]?.content?.parts?.map((part: any) => part.text).filter(Boolean).join(``) || `识别成功`
+  }
+  catch (error) {
+    toast({
+      title: `媒体识别失败`,
+      description: error instanceof Error ? error.message : `请求失败`,
       variant: `destructive`,
     })
   }
@@ -168,6 +247,18 @@ watch(settingsDialogVisible, async (newValue) => {
 
         <TabsContent value="connection" class="grid gap-4">
           <div class="grid gap-2">
+            <Label for="protocol">协议格式</Label>
+            <select id="protocol" v-model="connection.protocol" class="bg-background border-input h-10 w-full flex border rounded-md px-3 py-2 text-sm">
+              <option v-for="protocol in availableProtocols" :key="protocol.id" :value="protocol.id">
+                {{ protocol.label }}
+              </option>
+            </select>
+            <p class="text-muted-foreground text-xs">
+              当前协议会影响真实请求格式、端点、能力可见性和主生成流程。
+            </p>
+          </div>
+
+          <div class="grid gap-2">
             <Label for="connectionMode">连接模式</Label>
             <select id="connectionMode" v-model="connection.mode" class="bg-background border-input h-10 w-full flex border rounded-md px-3 py-2 text-sm">
               <option value="direct">
@@ -196,9 +287,11 @@ watch(settingsDialogVisible, async (newValue) => {
           </div>
 
           <div class="grid gap-2 border rounded-md p-4 text-sm">
-            <p><span class="font-medium">接口格式：</span>{{ connection.apiStyle }}</p>
+            <p><span class="font-medium">兼容族：</span>{{ connection.apiStyle }}</p>
+            <p><span class="font-medium">当前协议：</span>{{ connection.protocol }}</p>
             <p><span class="font-medium">连接模式：</span>{{ connection.mode }}</p>
-            <p><span class="font-medium">当前聊天端点：</span>{{ resolveEndpoint('/v1/chat/completions') }}</p>
+            <p><span class="font-medium">支持能力：</span>{{ supportedCapabilities.join(', ') }}</p>
+            <p><span class="font-medium">当前聊天端点：</span>{{ resolveEndpoint(connection.protocol === 'openai-responses' ? '/v1/responses' : connection.protocol === 'anthropic-native' ? '/v1/messages' : connection.protocol === 'gemini-native' ? '/v1beta/models:generateContent' : '/v1/chat/completions') }}</p>
             <p><span class="font-medium">当前模型列表端点：</span>{{ resolveEndpoint('/v1/models') }}</p>
           </div>
         </TabsContent>
@@ -217,7 +310,7 @@ watch(settingsDialogVisible, async (newValue) => {
 
           <div class="grid gap-4 md:grid-cols-2">
             <AIModelSelector
-              v-for="field in modelFields"
+              v-for="field in visibleModelFields"
               :key="field.key"
               :label="field.label"
               :model-id="defaults[field.key]"
@@ -302,7 +395,7 @@ watch(settingsDialogVisible, async (newValue) => {
         <TabsContent value="capabilities" class="grid gap-4">
           <div class="grid gap-3 md:grid-cols-2">
             <div
-              v-for="item in capabilityTests"
+              v-for="item in visibleCapabilityTests"
               :key="item.key"
               class="grid gap-2 border rounded-md p-4"
             >
@@ -323,6 +416,20 @@ watch(settingsDialogVisible, async (newValue) => {
                 {{ capabilityTestResults[item.key] }}
               </p>
             </div>
+          </div>
+
+          <div v-if="connection.protocol === 'gemini-native'" class="grid gap-3 border rounded-md p-4">
+            <p class="font-medium">
+              Gemini 媒体识别
+            </p>
+            <Input :model-value="mediaPrompt" placeholder="描述任务，例如：请识别图片中的文字和主体" @update:model-value="value => mediaPrompt = String(value)" />
+            <input type="file" accept="image/*" @change="handleMediaFileChange">
+            <Button variant="outline" @click="runMediaRecognition">
+              运行媒体识别
+            </Button>
+            <p v-if="mediaRecognitionResult" class="text-muted-foreground break-all text-xs">
+              {{ mediaRecognitionResult }}
+            </p>
           </div>
         </TabsContent>
       </Tabs>
