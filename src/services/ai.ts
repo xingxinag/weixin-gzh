@@ -1,4 +1,5 @@
 import { useAIStore } from '@/stores'
+import { AIClient } from './aiClient'
 
 // 添加检查和纠正模型的函数
 function validateAndFixModel(model: string): string {
@@ -73,7 +74,6 @@ export async function streamAIContent({
   aiStore.setGenerating(true)
 
   try {
-    // 验证必要的配置
     if (!aiStore.apiKey) {
       throw new Error(`请先设置 API Key`)
     }
@@ -82,62 +82,35 @@ export async function streamAIContent({
       throw new Error(`请先设置 API 地址`)
     }
 
-    // 添加日志记录，显示实际使用的模型
     console.log(`AI Store中的模型状态:`, {
       selectedModel: aiStore.selectedModel,
       customModel: aiStore.customModel,
     })
 
-    const selectedModel = aiStore.customModel || aiStore.selectedModel
+    const selectedModel = aiStore.selectedModel
     console.log(`发送请求前使用的模型：${selectedModel}`)
 
-    // 验证并修复可能的模型问题
     const validatedModel = validateAndFixModel(selectedModel)
     console.log(`验证后使用的模型：${validatedModel}`)
 
-    const response = await fetch(`${aiStore.apiDomain}/v1/chat/completions`, {
-      method: `POST`,
-      headers: {
-        'Content-Type': `application/json`,
-        'Authorization': `Bearer ${aiStore.apiKey}`,
-        'Accept': `application/json`,
-      },
-      body: JSON.stringify({
-        model: validatedModel,
-        messages: [
-          ...aiStore.presetWords.map(word => ({ role: `system` as const, content: word })),
-          ...(typeof prompt === `string`
-            ? [{ role: `user` as const, content: prompt }]
-            : Array.isArray(prompt)
-              ? prompt
-              : [
-                  { role: `system` as const, content: (prompt as { system?: string }).system || `` },
-                  { role: `user` as const, content: (prompt as { user?: string }).user || `` },
-                ]
-          ).filter(msg => msg.content),
-        ],
-        temperature: aiStore.temperature,
-        max_tokens: aiStore.maxLength,
-        stream: true,
-      }),
+    const client = new AIClient(aiStore.apiDomain, aiStore.apiKey)
+    const response = await client.createChatCompletion({
+      model: validatedModel,
+      messages: [
+        ...aiStore.presetWords.map(word => ({ role: `system`, content: word })),
+        ...(typeof prompt === `string`
+          ? [{ role: `user`, content: prompt }]
+          : Array.isArray(prompt)
+            ? prompt
+            : [
+                { role: `system`, content: (prompt as { system?: string }).system || `` },
+                { role: `user`, content: (prompt as { user?: string }).user || `` },
+              ]
+        ).filter(msg => msg.content),
+      ],
+      parameters: aiStore.parameters,
+      stream: true,
     })
-
-    if (!response.ok) {
-      const errorText = await response.text().catch(() => `无法获取错误详情`)
-      console.error(`API错误：`, {
-        状态码: response.status,
-        状态文本: response.statusText,
-        错误详情: errorText,
-      })
-
-      // 特殊处理模型不存在错误
-      if (errorText.includes(`model`) && (errorText.includes(`not found`) || errorText.includes(`cannot find`))) {
-        console.warn(`模型不可用错误：${errorText}`)
-        throw new Error(`所选模型(${validatedModel})不可用，请选择其他模型或联系API提供商确认支持的模型列表`)
-      }
-
-      throw new Error(`API请求失败 (${response.status}): ${errorText || response.statusText}`)
-    }
 
     return processStreamResponse(response, onToken, onFinish)
   }
@@ -146,7 +119,7 @@ export async function streamAIContent({
     console.error(`AI 请求失败:`, {
       错误信息: error instanceof Error ? error.message : String(error),
       API地址: aiStore.apiDomain,
-      模型: aiStore.customModel || aiStore.selectedModel,
+      模型: aiStore.selectedModel,
     })
     onError?.(error instanceof Error ? error : new Error(String(error)))
   }
@@ -257,43 +230,18 @@ export async function callAI(prompt: string): Promise<string> {
       customModel: aiStore.customModel,
     })
 
-    const selectedModel = aiStore.customModel || aiStore.selectedModel
+    const selectedModel = aiStore.selectedModel
     console.log(`callAI函数 - 使用模型：${selectedModel}`)
 
-    // 验证并修复可能的模型问题
     const validatedModel = validateAndFixModel(selectedModel)
     console.log(`callAI函数 - 验证后的模型：${validatedModel}`)
 
-    const response = await fetch(`${aiStore.apiDomain}/v1/chat/completions`, {
-      method: `POST`,
-      headers: {
-        'Content-Type': `application/json`,
-        'Authorization': `Bearer ${aiStore.apiKey}`,
-      },
-      body: JSON.stringify({
-        model: validatedModel,
-        messages: [{ role: `user`, content: prompt }],
-        temperature: aiStore.temperature,
-        max_tokens: aiStore.maxLength,
-      }),
+    const client = new AIClient(aiStore.apiDomain, aiStore.apiKey)
+    const response = await client.createChatCompletion({
+      model: validatedModel,
+      messages: [{ role: `user`, content: prompt }],
+      parameters: aiStore.parameters,
     })
-
-    if (!response.ok) {
-      const errorText = await response.text().catch(() => `无法获取错误详情`)
-      console.error(`callAI API错误：`, {
-        状态码: response.status,
-        状态文本: response.statusText,
-        错误详情: errorText,
-      })
-
-      // 特殊处理模型不存在错误
-      if (errorText.includes(`model`) && (errorText.includes(`not found`) || errorText.includes(`cannot find`))) {
-        console.warn(`模型不可用错误：${errorText}`)
-        throw new Error(`所选模型(${validatedModel})不可用，请选择其他模型或联系API提供商确认支持的模型列表`)
-      }
-
-      throw new Error(`API请求失败 (${response.status}): ${errorText || response.statusText}`)
-    }
 
     const data = await response.json()
     return data.choices[0].message.content
