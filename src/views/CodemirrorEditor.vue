@@ -369,18 +369,6 @@ async function handleChange(instance: CodeMirror.Editor, _changeObj: CodeMirror.
 
       // 强制更新预览内容
       await store.editorRefresh()
-
-      // 确保预览区域内容已完全更新
-      await nextTick()
-
-      // 触发预览区域的重新渲染
-      if (preview.value) {
-        const currentScroll = preview.value.scrollTop
-        preview.value.style.display = `none`
-        void preview.value.offsetHeight // 触发重排
-        preview.value.style.display = ``
-        preview.value.scrollTop = currentScroll
-      }
     }
     catch (error) {
       console.error(`更新预览内容时出错:`, error)

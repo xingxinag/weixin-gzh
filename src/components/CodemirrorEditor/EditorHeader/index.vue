@@ -53,7 +53,7 @@ const store = useStore()
 
 const { isDark, isCiteStatus, isCountStatus, output, primaryColor, isOpenPostSlider } = storeToRefs(store)
 
-const { toggleDark, editorRefresh, citeStatusChanged, countStatusChanged } = store
+const { toggleDark, citeStatusChanged, countStatusChanged } = store
 
 const copyMode = useStorage(addPrefix(`copyMode`), `txt`)
 const source = ref(``)
@@ -74,20 +74,25 @@ function copy() {
     }
 
     nextTick(async () => {
-      processClipboardContent(primaryColor.value)
-      const clipboardDiv = document.getElementById(`output`)!
-      clipboardDiv.focus()
-      window.getSelection()!.removeAllRanges()
-      const temp = clipboardDiv.innerHTML
+      const temp = processClipboardContent(output.value, primaryColor.value)
       if (copyMode.value === `txt`) {
+        const clipboardDiv = document.createElement(`div`)
+        clipboardDiv.contentEditable = `true`
+        clipboardDiv.style.position = `fixed`
+        clipboardDiv.style.left = `-9999px`
+        clipboardDiv.style.top = `0`
+        clipboardDiv.innerHTML = temp
+        document.body.appendChild(clipboardDiv)
+        clipboardDiv.focus()
+        window.getSelection()!.removeAllRanges()
         const range = document.createRange()
         range.setStartBefore(clipboardDiv.firstChild!)
         range.setEndAfter(clipboardDiv.lastChild!)
         window.getSelection()!.addRange(range)
         document.execCommand(`copy`)
         window.getSelection()!.removeAllRanges()
+        document.body.removeChild(clipboardDiv)
       }
-      clipboardDiv.innerHTML = output.value
       if (isBeforeDark) {
         nextTick(() => toggleDark())
       }
@@ -102,7 +107,6 @@ function copy() {
           : `已复制渲染后的内容到剪贴板，可直接到公众号后台粘贴。`,
       )
 
-      editorRefresh()
       emit(`endCopy`)
     })
   }, 350)
@@ -174,7 +178,7 @@ function copy() {
         <Sun v-show="!isDark" class="size-4" />
       </Button>
 
-      <div class="bg-background space-x-1 text-background-foreground mx-2 flex items-center border rounded-md">
+      <div class="space-x-1 bg-background text-background-foreground mx-2 flex items-center border rounded-md">
         <Button variant="ghost" class="shadow-none" @click="copy">
           复制
         </Button>
