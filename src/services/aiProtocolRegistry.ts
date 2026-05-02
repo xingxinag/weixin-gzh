@@ -3,6 +3,7 @@ import type {
   AIProtocolDefinition,
   AIProtocolId,
   ProtocolChatInput,
+  ProtocolImageInput,
   ProtocolMediaRecognitionInput,
 } from './aiProtocolTypes'
 import {
@@ -17,6 +18,8 @@ const openAIChatProtocol: AIProtocolDefinition = {
   buildEndpoint: (capability) => {
     switch (capability) {
       case `chat`: return `/v1/chat/completions`
+      case `imageGeneration`: return `/v1/images/generations`
+      case `imageEdit`: return `/v1/images/edits`
       case `embedding`: return `/v1/embeddings`
       case `rerank`: return `/v1/rerank`
       case `moderation`: return `/v1/moderations`
@@ -31,6 +34,9 @@ const openAIChatProtocol: AIProtocolDefinition = {
   buildRequest: (capability, input) => {
     if (capability === `chat`) {
       return buildChatCompletionBody(input as ProtocolChatInput)
+    }
+    if (capability === `imageGeneration` || capability === `imageEdit`) {
+      return input as ProtocolImageInput
     }
     return input
   },
@@ -138,4 +144,8 @@ export function getProtocolEndpoint(id: AIProtocolId, capability: AICapability) 
 
 export function buildProtocolRequest(id: AIProtocolId, capability: AICapability, input: unknown) {
   return getProtocolDefinition(id).buildRequest(capability, input)
+}
+
+export function resolveCapabilityEndpoint(overrideEndpoint: string, defaultEndpoint: string) {
+  return overrideEndpoint.trim() || defaultEndpoint
 }

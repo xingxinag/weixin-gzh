@@ -1,10 +1,10 @@
 import type { AIParameters as AIClientParameters, ReasoningEffort } from '@/services/aiClient'
-import type { AICapability, AIProtocolId } from '@/services/aiProtocolTypes'
+import type { AICapability, AICapabilitySetting, AIProtocolId } from '@/services/aiProtocolTypes'
 import type { Model } from '../services/aiModels'
 import { useStorage } from '@vueuse/core'
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
-import { AIClient, getCapabilityEndpoint, toNumber } from '../services/aiClient'
+import { AIClient, getCapabilityEndpoint as getResolvedCapabilityEndpoint, toNumber } from '../services/aiClient'
 import { aiModelsService } from '../services/aiModels'
 import { getProtocolDefinition, listProtocols } from '../services/aiProtocolRegistry'
 
@@ -30,6 +30,13 @@ export interface AIDefaultModels {
   transcriptionModel: string
   videoModel: string
   realtimeModel: string
+}
+
+export interface AICapabilitySettings {
+  chat: AICapabilitySetting
+  imageGeneration: AICapabilitySetting
+  imageEdit: AICapabilitySetting
+  mediaRecognition: AICapabilitySetting
 }
 
 export interface AIParameters extends AIClientParameters {
@@ -107,9 +114,43 @@ function createPresetDefaults() {
     : [``]
 }
 
+function createCapabilityDefaults(): AICapabilitySettings {
+  return {
+    chat: {
+      enabled: true,
+      followConnectionProtocol: true,
+      protocol: `openai-chat-completions`,
+      endpoint: ``,
+      model: `gpt-4o-mini`,
+    },
+    imageGeneration: {
+      enabled: true,
+      followConnectionProtocol: true,
+      protocol: `openai-chat-completions`,
+      endpoint: ``,
+      model: `dall-e-3`,
+    },
+    imageEdit: {
+      enabled: true,
+      followConnectionProtocol: true,
+      protocol: `openai-chat-completions`,
+      endpoint: ``,
+      model: `gpt-image-1`,
+    },
+    mediaRecognition: {
+      enabled: true,
+      followConnectionProtocol: true,
+      protocol: `gemini-native`,
+      endpoint: ``,
+      model: `gemini-1.5-pro`,
+    },
+  }
+}
+
 export const useAIStore = defineStore(`ai`, () => {
   const connection = useStorage<AIConnectionSettings>(`md-ai-connection`, createConnectionDefaults())
   const defaults = useStorage<AIDefaultModels>(`md-ai-default-models`, createModelDefaults())
+  const capabilities = useStorage<AICapabilitySettings>(`md-ai-capabilities`, createCapabilityDefaults())
   const parameters = useStorage<AIParameters>(`md-ai-parameters`, createParameterDefaults())
   const presetWords = useStorage<string[]>(`md-ai-preset-words`, createPresetDefaults())
   const customModel = useStorage(`md-ai-custom-model`, readLegacyString(`md-ai-custom-model`, ``))
@@ -153,6 +194,25 @@ export const useAIStore = defineStore(`ai`, () => {
   const usingProxy = computed(() => connection.value.mode === `worker-proxy`)
   const availableProtocols = computed(() => listProtocols())
   const supportedCapabilities = computed(() => getProtocolDefinition(connection.value.protocol).supportedCapabilities)
+
+  function getCapabilityProtocol(capability: keyof AICapabilitySettings) {
+    const config = capabilities.value[capability]
+    return config.followConnectionProtocol ? connection.value.protocol : config.protocol
+  }
+
+  function getCapabilityEndpoint(capability: keyof AICapabilitySettings) {
+    const config = capabilities.value[capability]
+    return config.endpoint.trim()
+  }
+
+  function getCapabilityModel(capability: keyof AICapabilitySettings) {
+    const config = capabilities.value[capability]
+    return config.model.trim()
+  }
+
+  function updateCapabilitySetting<K extends keyof AICapabilitySettings>(capability: K, key: keyof AICapabilitySettings[K], value: any) {
+    ;(capabilities.value[capability][key] as any) = value
+  }
 
   const apiKey = computed({
     get: () => connection.value.apiKey,
@@ -323,6 +383,7 @@ export const useAIStore = defineStore(`ai`, () => {
     syncModelService()
     localStorage.setItem(`aiSettings`, JSON.stringify({
       connection: connection.value,
+      capabilities: capabilities.value,
       defaults: defaults.value,
       parameters: parameters.value,
       presetWords: presetWords.value,
@@ -333,12 +394,34 @@ export const useAIStore = defineStore(`ai`, () => {
   }
 
   function getResolvedEndpoint(path: string) {
-    return getCapabilityEndpoint(connection.value.baseUrl, path)
+    return getResolvedCapabilityEndpoint(connection.value.baseUrl, path)
   }
 
   async function recognizeMedia(input: { model: string, inputText: string, media: Array<{ mimeType: string, data: string }> }) {
     const client = getClient()
     const response = await client.createCapabilityRequest(`mediaRecognition`, input)
+    return response.json()
+  }
+
+  async function generateImage(input: { prompt: string, n?: number, size?: string }) {
+    const client = getClient()
+    const response = await client.createImage({
+      model: getCapabilityModel(`imageGeneration`) || defaults.value.imageModel || `dall-e-3`,
+      prompt: input.prompt,
+      n: input.n || 1,
+      size: input.size || `1024x1024`,
+    })
+    return response.json()
+  }
+
+  async function editImage(input: { prompt: string, image: string, mimeType?: string }) {
+    const client = getClient()
+    const response = await client.createImageEdit({
+      model: getCapabilityModel(`imageEdit`) || `gpt-image-1`,
+      prompt: input.prompt,
+      image: input.image,
+      mimeType: input.mimeType,
+    })
     return response.json()
   }
 
@@ -467,6 +550,7 @@ export const useAIStore = defineStore(`ai`, () => {
 
   return {
     connection,
+    capabilities,
     usingProxy,
     availableProtocols,
     supportedCapabilities,
@@ -493,6 +577,7 @@ export const useAIStore = defineStore(`ai`, () => {
     setApiDomain,
     setConnectionMode,
     setProtocol,
+    updateCapabilitySetting,
     addPresetWord,
     removePresetWord,
     setTemperature,
@@ -510,5 +595,10 @@ export const useAIStore = defineStore(`ai`, () => {
     getResolvedEndpoint,
     protocolSupports,
     recognizeMedia,
+    getCapabilityProtocol,
+    getCapabilityEndpoint,
+    getCapabilityModel,
+    generateImage,
+    editImage,
   }
 })

@@ -3,6 +3,7 @@ import {
   buildProtocolRequest,
   getProtocolDefinition,
   getProtocolEndpoint,
+  resolveCapabilityEndpoint,
 } from '../aiProtocolRegistry'
 
 describe(`protocol registry`, () => {
@@ -51,5 +52,9 @@ describe(`protocol registry`, () => {
     }) as Record<string, unknown>
 
     expect(body.contents).toBeTruthy()
+  })
+
+  it(`uses explicit capability endpoint override when provided`, () => {
+    expect(resolveCapabilityEndpoint(`/custom/images`, `/v1/images/generations`)).toBe(`/custom/images`)
   })
 })

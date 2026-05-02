@@ -93,6 +93,13 @@ const modelFieldCapabilityMap: Record<ModelCapability, string> = {
 const visibleModelFields = computed(() => modelFields.filter(field => aiStore.protocolSupports(modelFieldCapabilityMap[field.key] as any)))
 const visibleCapabilityTests = computed(() => capabilityTests.filter(item => item.key === `models` || aiStore.protocolSupports(capabilityMap[item.key] as any)))
 
+const capabilityOverrideFields = [
+  { key: `chat`, label: `聊天` },
+  { key: `imageGeneration`, label: `图像生成` },
+  { key: `imageEdit`, label: `图像编辑` },
+  { key: `mediaRecognition`, label: `媒体识别` },
+] as const
+
 function resolveEndpoint(path: string) {
   return aiStore.getResolvedEndpoint(path)
 }
@@ -393,6 +400,36 @@ watch(settingsDialogVisible, async (newValue) => {
         </TabsContent>
 
         <TabsContent value="capabilities" class="grid gap-4">
+          <div class="grid gap-4 md:grid-cols-2">
+            <div
+              v-for="item in capabilityOverrideFields"
+              :key="item.key"
+              class="grid gap-3 border rounded-md p-4"
+            >
+              <p class="font-medium">
+                {{ item.label }}
+              </p>
+              <label class="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  :checked="aiStore.capabilities[item.key].followConnectionProtocol"
+                  @change="event => aiStore.updateCapabilitySetting(item.key, 'followConnectionProtocol', (event.target as HTMLInputElement).checked)"
+                >
+                跟随全局协议
+              </label>
+              <Input
+                :model-value="aiStore.capabilities[item.key].model"
+                placeholder="单独指定模型，可留空走默认"
+                @update:model-value="value => aiStore.updateCapabilitySetting(item.key, 'model', String(value))"
+              />
+              <Input
+                :model-value="aiStore.capabilities[item.key].endpoint"
+                placeholder="单独指定端点，可留空走协议默认"
+                @update:model-value="value => aiStore.updateCapabilitySetting(item.key, 'endpoint', String(value))"
+              />
+            </div>
+          </div>
+
           <div class="grid gap-3 md:grid-cols-2">
             <div
               v-for="item in visibleCapabilityTests"

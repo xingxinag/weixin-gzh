@@ -12,6 +12,8 @@ export type AIProtocolId =
 export type AICapability =
   | `chat`
   | `mediaRecognition`
+  | `imageGeneration`
+  | `imageEdit`
   | `embedding`
   | `rerank`
   | `moderation`
@@ -32,6 +34,21 @@ export interface ProtocolMediaRecognitionInput {
   model: string
   inputText: string
   media: Array<{ mimeType: string, data: string }>
+}
+
+export interface ProtocolImageInput {
+  model: string
+  prompt: string
+  n?: number
+  size?: string
+}
+
+export interface AICapabilitySetting {
+  enabled: boolean
+  followConnectionProtocol: boolean
+  protocol: AIProtocolId
+  endpoint: string
+  model: string
 }
 
 export interface AIProtocolDefinition {

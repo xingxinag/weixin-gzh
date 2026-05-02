@@ -65,4 +65,13 @@ describe(`useAIStore migration`, () => {
     expect(store.supportedCapabilities).toContain(`chat`)
     expect(store.supportedCapabilities).not.toContain(`embedding`)
   })
+
+  it(`uses capability protocol override when followConnectionProtocol is false`, () => {
+    const store = useAIStore()
+    store.connection.protocol = `anthropic-native`
+    store.capabilities.imageGeneration.followConnectionProtocol = false
+    store.capabilities.imageGeneration.protocol = `openai-chat-completions`
+
+    expect(store.getCapabilityProtocol(`imageGeneration`)).toBe(`openai-chat-completions`)
+  })
 })

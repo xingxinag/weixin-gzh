@@ -57,6 +57,13 @@ export interface ImageInput {
   size?: string
 }
 
+export interface ImageEditInput {
+  model: string
+  prompt: string
+  image: string
+  mimeType?: string
+}
+
 export interface SpeechInput {
   model: string
   input: string
@@ -299,6 +306,19 @@ export class AIClient {
       method: `POST`,
       headers: this.headers({ 'Content-Type': `application/json` }),
       body: JSON.stringify(buildImageBody(input)),
+    })
+  }
+
+  createImageEdit(input: ImageEditInput) {
+    return this.request(`/v1/images/edits`, {
+      method: `POST`,
+      headers: this.headers({ 'Content-Type': `application/json` }),
+      body: JSON.stringify({
+        model: input.model,
+        prompt: input.prompt,
+        image: input.image,
+        mime_type: input.mimeType || `image/png`,
+      }),
     })
   }
 
