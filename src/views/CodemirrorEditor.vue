@@ -589,7 +589,9 @@ async function executeRecognizeImageWithAI() {
     inputText: imageActionPrompt.value,
     media: [{ mimeType: imageActionFile.value.mimeType, data: imageActionFile.value.base64 }],
   }) as any
-  const text = payload.candidates?.[0]?.content?.parts?.map((part: any) => part.text).filter(Boolean).join(``) || ``
+  const text = payload.candidates?.[0]?.content?.parts?.map((part: any) => part.text).filter(Boolean).join(``)
+    || payload.choices?.[0]?.message?.content
+    || ``
   if (text && editor.value) {
     editor.value.replaceSelection(`\n${text}\n`)
   }

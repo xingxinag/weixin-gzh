@@ -14,7 +14,7 @@ import {
 const openAIChatProtocol: AIProtocolDefinition = {
   id: `openai-chat-completions`,
   label: `OpenAI ChatCompletions`,
-  supportedCapabilities: [`chat`, `embedding`, `rerank`, `moderation`, `image`, `speech`, `transcription`, `video`, `realtime`],
+  supportedCapabilities: [`chat`, `embedding`, `rerank`, `moderation`, `image`, `imageGeneration`, `imageEdit`, `speech`, `transcription`, `video`, `realtime`],
   buildEndpoint: (capability) => {
     switch (capability) {
       case `chat`: return `/v1/chat/completions`
@@ -86,7 +86,7 @@ const geminiProtocol: AIProtocolDefinition = {
   supportedCapabilities: [`chat`, `mediaRecognition`],
   buildEndpoint: capability => capability === `mediaRecognition`
     ? `/v1beta/models:generateContent`
-    : `/v1beta/models:generateContent`,
+    : `/v1beta/models/{model}:generateContent`,
   buildRequest: (capability, input) => {
     if (capability === `mediaRecognition`) {
       const mediaInput = input as ProtocolMediaRecognitionInput

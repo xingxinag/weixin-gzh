@@ -398,13 +398,20 @@ export const useAIStore = defineStore(`ai`, () => {
   }
 
   async function recognizeMedia(input: { model: string, inputText: string, media: Array<{ mimeType: string, data: string }> }) {
-    const client = getClient()
+    const capProtocol = getCapabilityProtocol(`mediaRecognition`)
+    const capEndpoint = getCapabilityEndpoint(`mediaRecognition`)
+    const baseUrl = capEndpoint || connection.value.baseUrl
+    const apiKey = connection.value.mode === `worker-proxy` ? `proxy-mode` : connection.value.apiKey
+    const client = new AIClient(baseUrl, apiKey, capProtocol)
     const response = await client.createCapabilityRequest(`mediaRecognition`, input)
     return response.json()
   }
 
   async function generateImage(input: { prompt: string, n?: number, size?: string }) {
-    const client = getClient()
+    const capEndpoint = getCapabilityEndpoint(`imageGeneration`)
+    const baseUrl = capEndpoint || connection.value.baseUrl
+    const apiKey = connection.value.mode === `worker-proxy` ? `proxy-mode` : connection.value.apiKey
+    const client = new AIClient(baseUrl, apiKey, connection.value.protocol)
     const response = await client.createImage({
       model: getCapabilityModel(`imageGeneration`) || defaults.value.imageModel || `dall-e-3`,
       prompt: input.prompt,
@@ -415,7 +422,10 @@ export const useAIStore = defineStore(`ai`, () => {
   }
 
   async function editImage(input: { prompt: string, image: string, mimeType?: string }) {
-    const client = getClient()
+    const capEndpoint = getCapabilityEndpoint(`imageEdit`)
+    const baseUrl = capEndpoint || connection.value.baseUrl
+    const apiKey = connection.value.mode === `worker-proxy` ? `proxy-mode` : connection.value.apiKey
+    const client = new AIClient(baseUrl, apiKey, connection.value.protocol)
     const response = await client.createImageEdit({
       model: getCapabilityModel(`imageEdit`) || `gpt-image-1`,
       prompt: input.prompt,

@@ -310,15 +310,25 @@ export class AIClient {
   }
 
   createImageEdit(input: ImageEditInput) {
+    // API requires multipart/form-data with binary image file
+    const mimeType = input.mimeType || `image/png`
+    const base64Data = input.image.replace(/^data:[^;]+;base64,/, ``)
+    const byteString = atob(base64Data)
+    const bytes = new Uint8Array(byteString.length)
+    for (let i = 0; i < byteString.length; i++) {
+      bytes[i] = byteString.charCodeAt(i)
+    }
+    const blob = new Blob([bytes], { type: mimeType })
+    const ext = mimeType.split(`/`)[1] || `png`
+    const formData = new FormData()
+    formData.append(`image`, blob, `image.${ext}`)
+    formData.append(`prompt`, input.prompt)
+    formData.append(`model`, input.model)
+    // omit Content-Type so browser sets multipart boundary automatically
     return this.request(`/v1/images/edits`, {
       method: `POST`,
-      headers: this.headers({ 'Content-Type': `application/json` }),
-      body: JSON.stringify({
-        model: input.model,
-        prompt: input.prompt,
-        image: input.image,
-        mime_type: input.mimeType || `image/png`,
-      }),
+      headers: this.headers(),
+      body: formData,
     })
   }
 
