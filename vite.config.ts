@@ -10,9 +10,27 @@ import { defineConfig } from 'vite'
 import { nodePolyfills } from 'vite-plugin-node-polyfills'
 import vueDevTools from 'vite-plugin-vue-devtools'
 
+function resolveBase() {
+  const explicitBase = process.env.PUBLIC_BASE_PATH?.trim()
+  if (explicitBase) {
+    return explicitBase.endsWith(`/`) ? explicitBase : `${explicitBase}/`
+  }
+
+  if (process.env.VERCEL || process.env.CF_PAGES || process.env.SERVER_ENV === `NETLIFY`) {
+    return `/`
+  }
+
+  if (process.env.GITHUB_ACTIONS === `true`) {
+    const repoName = process.env.GITHUB_REPOSITORY?.split(`/`)[1]
+    return repoName ? `/${repoName}/` : `/`
+  }
+
+  return `/`
+}
+
 // https://vitejs.dev/config/
 export default defineConfig({
-  base: process.env.SERVER_ENV === `NETLIFY` ? `/` : `/md/`, // 基本路径, 建议以绝对路径跟随访问目录
+  base: resolveBase(),
   define: {
     process,
   },
