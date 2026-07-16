@@ -1,4 +1,4 @@
-import { useAIStore } from '@/stores'
+import { useAIStore } from '@/stores/ai'
 import { AIClient } from './aiClient'
 
 // 添加检查和纠正模型的函数
@@ -17,6 +17,7 @@ async function processStreamResponse(
   const aiStore = useAIStore()
   const reader = response.body?.getReader()
   const decoder = new TextDecoder()
+  let hasContent = false
 
   if (!reader) {
     throw new Error(`无法读取响应数据流`)
@@ -27,6 +28,9 @@ async function processStreamResponse(
 
     if (done) {
       aiStore.setGenerating(false)
+      if (!hasContent) {
+        throw new Error(`AI 返回内容为空，请检查模型或接口响应`)
+      }
       onFinish?.()
       break
     }
@@ -36,18 +40,15 @@ async function processStreamResponse(
 
     for (const line of lines) {
       if (line.startsWith(`data: `)) {
-        const data = line.slice(6)
+        const data = line.slice(6).trim()
         if (data === `[DONE]`)
           continue
 
         try {
           const parsed = JSON.parse(data)
-          const token = protocol === `openai-responses`
-            ? parsed.output?.[0]?.content?.[0]?.text || parsed.delta || parsed.response?.output_text
-            : protocol === `anthropic-native`
-              ? parsed.delta?.text || parsed.content_block?.text || parsed.content_block_delta?.delta?.text
-              : parsed.choices?.[0]?.delta?.content || parsed.candidates?.[0]?.content?.parts?.[0]?.text
+          const token = extractAIText(parsed, protocol, true)
           if (token) {
+            hasContent = true
             onToken?.(token)
           }
         }
@@ -57,6 +58,42 @@ async function processStreamResponse(
       }
     }
   }
+}
+
+function extractAIText(payload: any, protocol: string, streaming = false) {
+  if (protocol === `openai-responses`) {
+    return payload.output?.flatMap((item: any) => item.content || [])
+      ?.map((part: any) => part.text)
+      ?.filter(Boolean)
+      ?.join(``)
+      || payload.output_text
+      || payload.delta
+      || payload.response?.output_text
+      || ``
+  }
+
+  if (protocol === `anthropic-native`) {
+    return payload.content?.map((part: any) => part.text).filter(Boolean).join(``)
+      || payload.delta?.text
+      || payload.content_block?.text
+      || payload.content_block_delta?.delta?.text
+      || ``
+  }
+
+  return payload.choices?.[0]?.message?.content
+    || (streaming ? payload.choices?.[0]?.delta?.content : ``)
+    || payload.candidates?.[0]?.content?.parts?.map((part: any) => part.text).filter(Boolean).join(``)
+    || payload.content?.[0]?.text
+    || ``
+}
+
+async function emitJsonResponseText(response: Response, protocol: string, onToken?: (token: string) => void) {
+  const payload = await response.json() as any
+  const text = extractAIText(payload, protocol)
+  if (!text) {
+    throw new Error(`AI 返回内容为空，请检查模型或接口响应`)
+  }
+  onToken?.(text)
 }
 
 export interface AIStreamOptions {
@@ -118,22 +155,14 @@ export async function streamAIContent({
       stream: streamEnabled,
     })
 
-    if (!streamEnabled) {
-      const payload = await response.json() as any
-      const text = payload.output?.[0]?.content?.[0]?.text
-        || payload.content?.[0]?.text
-        || payload.candidates?.[0]?.content?.parts?.map((part: any) => part.text).filter(Boolean).join(``)
-        || payload.choices?.[0]?.message?.content
-        || ``
-      if (text) {
-        onToken?.(text)
-      }
+    if (!streamEnabled || response.headers.get(`Content-Type`)?.includes(`application/json`)) {
+      await emitJsonResponseText(response, aiStore.connection.protocol, onToken)
       aiStore.setGenerating(false)
       onFinish?.()
       return
     }
 
-    return processStreamResponse(response, aiStore.connection.protocol, onToken, onFinish)
+    await processStreamResponse(response, aiStore.connection.protocol, onToken, onFinish)
   }
   catch (error) {
     aiStore.setGenerating(false)
@@ -265,11 +294,7 @@ export async function callAI(prompt: string): Promise<string> {
     })
 
     const data = await response.json() as any
-    return data.output?.[0]?.content?.[0]?.text
-      || data.content?.[0]?.text
-      || data.candidates?.[0]?.content?.parts?.map((part: any) => part.text).filter(Boolean).join(``)
-      || data.choices?.[0]?.message?.content
-      || ``
+    return extractAIText(data, aiStore.connection.protocol)
   }
   catch (error) {
     console.error(`调用 AI 服务失败:`, error)
