@@ -41,6 +41,13 @@ export interface ProtocolImageInput {
   prompt: string
   n?: number
   size?: string
+  quality?: string
+  responseFormat?: string
+  background?: string
+  outputFormat?: string
+  outputCompression?: number
+  moderation?: string
+  inputFidelity?: string
 }
 
 export interface AICapabilitySetting {

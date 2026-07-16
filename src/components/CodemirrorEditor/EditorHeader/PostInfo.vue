@@ -118,7 +118,7 @@ onBeforeMount(() => {
 
 <template>
   <Dialog v-model:open="dialogVisible" @update:open="onUpdate">
-    <DialogTrigger>
+    <DialogTrigger as-child>
       <Button variant="outline" @click="prePost">
         发布
       </Button>

@@ -55,6 +55,12 @@ export interface ImageInput {
   prompt: string
   n?: unknown
   size?: string
+  quality?: string
+  responseFormat?: string
+  background?: string
+  outputFormat?: string
+  outputCompression?: unknown
+  moderation?: string
 }
 
 export interface ImageEditInput {
@@ -62,6 +68,14 @@ export interface ImageEditInput {
   prompt: string
   image: string
   mimeType?: string
+  n?: unknown
+  size?: string
+  quality?: string
+  responseFormat?: string
+  background?: string
+  outputFormat?: string
+  outputCompression?: unknown
+  inputFidelity?: string
 }
 
 export interface SpeechInput {
@@ -113,6 +127,13 @@ export function buildApiUrl(baseUrl: string, path: string) {
 
 export function getCapabilityEndpoint(baseUrl: string, path: string) {
   return buildApiUrl(baseUrl, path)
+}
+
+function resolveProtocolPath(path: string, input: unknown) {
+  const model = typeof input === `object` && input !== null && `model` in input
+    ? String((input as { model?: unknown }).model || ``)
+    : ``
+  return path.replace(`{model}`, encodeURIComponent(model))
 }
 
 function withOptionalField(target: Record<string, unknown>, key: string, value: unknown) {
@@ -184,6 +205,12 @@ export function buildImageBody(input: ImageInput) {
 
   withOptionalField(body, `n`, toOptionalNumber(input.n))
   withOptionalField(body, `size`, input.size)
+  withOptionalField(body, `quality`, input.quality)
+  withOptionalField(body, `response_format`, input.responseFormat)
+  withOptionalField(body, `background`, input.background)
+  withOptionalField(body, `output_format`, input.outputFormat)
+  withOptionalField(body, `output_compression`, toOptionalNumber(input.outputCompression))
+  withOptionalField(body, `moderation`, input.moderation)
   return body
 }
 
@@ -249,7 +276,7 @@ export class AIClient {
   }
 
   async createCapabilityRequest(capability: AICapability, input: unknown) {
-    const path = getProtocolEndpoint(this.protocol, capability)
+    const path = resolveProtocolPath(getProtocolEndpoint(this.protocol, capability), input)
     const body = buildProtocolRequest(this.protocol, capability, input)
     return this.request(path, {
       method: `POST`,
@@ -302,11 +329,7 @@ export class AIClient {
   }
 
   createImage(input: ImageInput) {
-    return this.request(`/v1/images/generations`, {
-      method: `POST`,
-      headers: this.headers({ 'Content-Type': `application/json` }),
-      body: JSON.stringify(buildImageBody(input)),
-    })
+    return this.createCapabilityRequest(`imageGeneration`, input)
   }
 
   createImageEdit(input: ImageEditInput) {
@@ -324,6 +347,30 @@ export class AIClient {
     formData.append(`image`, blob, `image.${ext}`)
     formData.append(`prompt`, input.prompt)
     formData.append(`model`, input.model)
+    if (isFilled(input.n)) {
+      formData.append(`n`, String(toOptionalNumber(input.n)))
+    }
+    if (isFilled(input.size)) {
+      formData.append(`size`, input.size!)
+    }
+    if (isFilled(input.quality)) {
+      formData.append(`quality`, input.quality!)
+    }
+    if (isFilled(input.responseFormat)) {
+      formData.append(`response_format`, input.responseFormat!)
+    }
+    if (isFilled(input.background)) {
+      formData.append(`background`, input.background!)
+    }
+    if (isFilled(input.outputFormat)) {
+      formData.append(`output_format`, input.outputFormat!)
+    }
+    if (isFilled(input.outputCompression)) {
+      formData.append(`output_compression`, String(toOptionalNumber(input.outputCompression)))
+    }
+    if (isFilled(input.inputFidelity)) {
+      formData.append(`input_fidelity`, input.inputFidelity!)
+    }
     // omit Content-Type so browser sets multipart boundary automatically
     return this.request(`/v1/images/edits`, {
       method: `POST`,

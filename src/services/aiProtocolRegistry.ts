@@ -8,8 +8,54 @@ import type {
 } from './aiProtocolTypes'
 import {
   buildChatCompletionBody,
+  buildImageBody,
   toNumber,
+  toOptionalNumber,
 } from './aiClient'
+
+function openAISizeToGeminiAspectRatio(size?: string) {
+  const normalized = size?.trim()
+  if (!normalized) {
+    return `1:1`
+  }
+  if (normalized.includes(`:`)) {
+    return normalized
+  }
+
+  switch (normalized) {
+    case `256x256`:
+    case `512x512`:
+    case `1024x1024`:
+      return `1:1`
+    case `1536x1024`:
+      return `3:2`
+    case `1024x1536`:
+      return `2:3`
+    case `1024x1792`:
+      return `9:16`
+    case `1792x1024`:
+      return `16:9`
+    default:
+      return `1:1`
+  }
+}
+
+function openAIQualityToGeminiImageSize(quality?: string) {
+  switch (quality) {
+    case `hd`:
+    case `high`:
+    case `2K`:
+      return `2K`
+    case `standard`:
+    case `medium`:
+    case `low`:
+    case `auto`:
+    case `1K`:
+      return `1K`
+    default:
+      return undefined
+  }
+}
 
 const openAIChatProtocol: AIProtocolDefinition = {
   id: `openai-chat-completions`,
@@ -35,7 +81,10 @@ const openAIChatProtocol: AIProtocolDefinition = {
     if (capability === `chat`) {
       return buildChatCompletionBody(input as ProtocolChatInput)
     }
-    if (capability === `imageGeneration` || capability === `imageEdit`) {
+    if (capability === `imageGeneration`) {
+      return buildImageBody(input as ProtocolImageInput)
+    }
+    if (capability === `imageEdit`) {
       return input as ProtocolImageInput
     }
     return input
@@ -83,11 +132,29 @@ const claudeProtocol: AIProtocolDefinition = {
 const geminiProtocol: AIProtocolDefinition = {
   id: `gemini-native`,
   label: `Gemini 原生`,
-  supportedCapabilities: [`chat`, `mediaRecognition`],
-  buildEndpoint: capability => capability === `mediaRecognition`
-    ? `/v1beta/models:generateContent`
+  supportedCapabilities: [`chat`, `mediaRecognition`, `imageGeneration`, `embedding`],
+  buildEndpoint: capability => capability === `imageGeneration`
+    ? `/v1beta/models/{model}:predict`
     : `/v1beta/models/{model}:generateContent`,
   buildRequest: (capability, input) => {
+    if (capability === `imageGeneration`) {
+      const imageInput = input as ProtocolImageInput
+      const parameters: Record<string, unknown> = {
+        sampleCount: toOptionalNumber(imageInput.n) || 1,
+        aspectRatio: openAISizeToGeminiAspectRatio(imageInput.size),
+        personGeneration: `allow_adult`,
+      }
+      const imageSize = openAIQualityToGeminiImageSize(imageInput.quality)
+      if (imageSize) {
+        parameters.imageSize = imageSize
+      }
+
+      return {
+        instances: [{ prompt: imageInput.prompt }],
+        parameters,
+      }
+    }
+
     if (capability === `mediaRecognition`) {
       const mediaInput = input as ProtocolMediaRecognitionInput
       return {

@@ -17,6 +17,11 @@ describe(`protocol registry`, () => {
     expect(getProtocolEndpoint(`openai-responses`, `chat`)).toBe(`/v1/responses`)
   })
 
+  it(`uses OpenAI-compatible image generation and edit endpoints`, () => {
+    expect(getProtocolEndpoint(`openai-chat-completions`, `imageGeneration`)).toBe(`/v1/images/generations`)
+    expect(getProtocolEndpoint(`openai-chat-completions`, `imageEdit`)).toBe(`/v1/images/edits`)
+  })
+
   it(`builds a Claude native chat payload`, () => {
     const body = buildProtocolRequest(`anthropic-native`, `chat`, {
       model: `claude-3-5-sonnet`,
@@ -52,6 +57,29 @@ describe(`protocol registry`, () => {
     }) as Record<string, unknown>
 
     expect(body.contents).toBeTruthy()
+  })
+
+  it(`builds a Gemini Imagen generation request`, () => {
+    expect(getProtocolDefinition(`gemini-native`).supportedCapabilities).toContain(`imageGeneration`)
+    expect(getProtocolEndpoint(`gemini-native`, `imageGeneration`)).toBe(`/v1beta/models/{model}:predict`)
+
+    const body = buildProtocolRequest(`gemini-native`, `imageGeneration`, {
+      model: `imagen-4.0-generate-001`,
+      prompt: `A clean article cover`,
+      n: 2,
+      size: `1792x1024`,
+      quality: `hd`,
+    }) as Record<string, any>
+
+    expect(body).toEqual({
+      instances: [{ prompt: `A clean article cover` }],
+      parameters: {
+        sampleCount: 2,
+        aspectRatio: `16:9`,
+        personGeneration: `allow_adult`,
+        imageSize: `2K`,
+      },
+    })
   })
 
   it(`uses explicit capability endpoint override when provided`, () => {
