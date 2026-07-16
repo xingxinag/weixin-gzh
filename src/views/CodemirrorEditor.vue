@@ -1002,9 +1002,11 @@ async function continueWithAI() {
     editor.value.setCursor(newPosition)
 
     // 使用streamAIContent来实现流式输出
+    let hasGeneratedContent = false
     streamAIContent({
       prompt,
       onToken: (token: string) => {
+        hasGeneratedContent = true
         // 每收到一个token就立即更新编辑器
         editor.value?.replaceRange(token, newPosition)
         // 更新插入位置
@@ -1021,10 +1023,16 @@ async function continueWithAI() {
       },
       onError: (error: Error) => {
         toast.error(error.message)
+        if (!hasGeneratedContent) {
+          const fallbackText = `\n【AI 续写失败：${error.message}】\n请在 AI 提供商设置中切换到当前 Key 可用的模型后重试。\n`
+          editor.value?.replaceRange(fallbackText, newPosition)
+        }
       },
       onFinish: () => {
         // 完成后添加完成标记
-        editor.value?.replaceRange(`\n\n【内容编写完成】\n`, newPosition)
+        if (hasGeneratedContent) {
+          editor.value?.replaceRange(`\n\n【内容编写完成】\n`, newPosition)
+        }
       },
     } satisfies AIStreamOptions)
   }
