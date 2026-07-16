@@ -32,6 +32,12 @@ describe(`useAIStore migration`, () => {
     expect(store.parameters.maxTokens).toBe(3200)
   })
 
+  it(`uses the xiaohuxing API as the default base URL`, () => {
+    const store = useAIStore()
+
+    expect(store.connection.baseUrl).toBe(`https://api.xiaohuxing.eu.org`)
+  })
+
   it(`migrates legacy custom model into visible chat model without hidden override`, () => {
     localStorage.setItem(`md-ai-selected-model`, `gpt-4o-mini`)
     localStorage.setItem(`md-ai-custom-model`, `private-chat-model`)
@@ -66,6 +72,13 @@ describe(`useAIStore migration`, () => {
     expect(store.supportedCapabilities).not.toContain(`embedding`)
   })
 
+  it(`exposes Gemini image generation as a protocol capability`, () => {
+    const store = useAIStore()
+    store.connection.protocol = `gemini-native`
+
+    expect(store.supportedCapabilities).toContain(`imageGeneration`)
+  })
+
   it(`uses capability protocol override when followConnectionProtocol is false`, () => {
     const store = useAIStore()
     store.connection.protocol = `anthropic-native`
@@ -73,5 +86,19 @@ describe(`useAIStore migration`, () => {
     store.capabilities.imageGeneration.protocol = `openai-chat-completions`
 
     expect(store.getCapabilityProtocol(`imageGeneration`)).toBe(`openai-chat-completions`)
+  })
+
+  it(`normalizes image generation parameters`, () => {
+    const store = useAIStore()
+
+    store.updateImageParameter(`n`, `3`)
+    store.updateImageParameter(`outputCompression`, `101`)
+    store.updateImageParameter(`quality`, `high`)
+    store.updateImageParameter(`responseFormat`, `b64_json`)
+
+    expect(store.imageParameters.n).toBe(3)
+    expect(store.imageParameters.outputCompression).toBe(100)
+    expect(store.imageParameters.quality).toBe(`high`)
+    expect(store.imageParameters.responseFormat).toBe(`b64_json`)
   })
 })

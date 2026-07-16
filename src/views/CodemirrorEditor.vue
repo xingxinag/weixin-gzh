@@ -1715,11 +1715,11 @@ function handlePreviewBlur() {
       @end-copy="endCopy"
     />
     <main class="container-main flex flex-1 flex-col">
-      <div class="container-main-section border-radius-10 relative flex flex-1 overflow-hidden border-1">
-        <PostSlider />
+      <div class="editor-workspace-shell container-main-section border-radius-10 relative flex flex-1 overflow-hidden border-1">
+        <PostSlider class="content-rail" />
         <div
           ref="codeMirrorWrapper"
-          class="codeMirror-wrapper"
+          class="editor-pane codeMirror-wrapper"
           :class="{
             'order-1': !store.isEditOnLeft && !isMobileView,
             'border-r': store.isEditOnLeft && !isMobileView,
@@ -1801,7 +1801,7 @@ function handlePreviewBlur() {
         <div
           id="preview"
           ref="preview"
-          class="preview-wrapper flex-1 p-5"
+          class="preview-pane preview-wrapper flex-1 p-5"
           :class="{
             'hidden': isMobileView && !showPreview,
             'is-transitioning': isTransitioning,
@@ -1830,8 +1830,8 @@ function handlePreviewBlur() {
           </div>
           <BackTop target="preview" :right="40" :bottom="40" />
         </div>
-        <CssEditor class="order-2 flex-1" />
-        <RightSlider class="order-2" />
+        <CssEditor class="css-editor-pane order-2 flex-1" />
+        <RightSlider class="settings-pane order-2" />
       </div>
       <footer
         class="text-muted-foreground h-[30px] flex select-none items-center justify-end text-[12px]"
@@ -1998,13 +1998,17 @@ function handlePreviewBlur() {
 
 .container-main {
   overflow: hidden;
-  padding: 0 20px;
+  padding: 0 20px 12px;
+  min-width: 0;
+  background: hsl(var(--muted) / 0.28);
 }
 
 #output-wrapper {
   position: relative;
   user-select: text;
   height: 100%;
+  width: 100%;
+  min-width: 0;
 }
 
 .loading-mask {
@@ -2039,11 +2043,67 @@ function handlePreviewBlur() {
 .codeMirror-wrapper,
 .preview-wrapper {
   height: 100%;
+  min-width: 0;
   will-change: transform, opacity;
 }
 
+.editor-workspace-shell {
+  min-width: 0;
+  gap: 1px;
+  border-color: hsl(var(--border));
+  background: hsl(var(--border));
+  box-shadow:
+    0 18px 48px rgba(15, 23, 42, 0.08),
+    0 1px 0 hsl(var(--background) / 0.8) inset;
+}
+
+.editor-pane,
+.preview-pane {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 320px;
+  background: hsl(var(--background));
+}
+
+.editor-pane::before,
+.preview-pane::before {
+  position: absolute;
+  top: 12px;
+  right: 14px;
+  z-index: 3;
+  border: 1px solid hsl(var(--border));
+  border-radius: 999px;
+  background: hsl(var(--background) / 0.92);
+  color: hsl(var(--muted-foreground));
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  padding: 5px 8px;
+  pointer-events: none;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.08);
+}
+
+.editor-pane::before {
+  content: '编辑';
+}
+
+.preview-pane::before {
+  content: '预览';
+}
+
+.css-editor-pane {
+  background: hsl(var(--background));
+}
+
+.content-rail,
+.settings-pane,
+.css-editor-pane {
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
 .codeMirror-wrapper {
-  overflow-x: auto;
+  overflow: hidden;
   position: relative;
 
   &.prevent-touch {
@@ -2133,29 +2193,31 @@ function handlePreviewBlur() {
 
 .preview-wrapper {
   height: 100%;
-  overflow-y: auto;
-  background-color: transparent;
+  overflow: auto;
+  background: hsl(var(--muted) / 0.26);
   width: 100%;
   padding: 0;
   box-sizing: border-box;
   border: none;
 
   .preview {
-    width: 100%;
+    width: min(100%, 677px);
+    max-width: 100%;
     height: 100%;
-    margin: 0;
-    background-color: transparent;
-    box-shadow: none;
+    margin: 0 auto;
+    background-color: hsl(var(--background));
+    box-shadow: 0 0 0 1px hsl(var(--border));
     border: none;
 
     #output {
       width: 100%;
+      max-width: 100%;
       min-height: 100%;
       height: auto;
       padding: 20px;
       box-sizing: border-box;
       border: none;
-      background-color: transparent;
+      background-color: hsl(var(--background));
       color: var(--foreground);
     }
   }
@@ -2163,6 +2225,7 @@ function handlePreviewBlur() {
 
 .markdown-preview {
   width: 100%;
+  max-width: 100%;
   min-height: 100%;
   height: auto;
   overflow: visible;
@@ -2203,6 +2266,45 @@ function handlePreviewBlur() {
       -moz-user-modify: read-write;
     }
   }
+}
+
+:deep(.markdown-preview img),
+:deep(.markdown-preview video),
+:deep(.markdown-preview canvas),
+:deep(.markdown-preview svg) {
+  max-width: 100%;
+  height: auto;
+}
+
+:deep(.markdown-preview section) {
+  max-width: 100%;
+}
+
+:deep(.markdown-preview pre) {
+  max-width: 100%;
+  overflow-x: auto;
+  white-space: pre;
+}
+
+:deep(.markdown-preview pre code) {
+  display: block;
+  width: max-content;
+  min-width: 100%;
+  max-width: none;
+  overflow-x: visible;
+  white-space: pre;
+}
+
+:deep(.markdown-preview table) {
+  width: max-content !important;
+  min-width: 100%;
+  max-width: none;
+}
+
+:deep(.markdown-preview .preview-table) {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
 }
 
 .mobile-controls {
@@ -2366,11 +2468,24 @@ function handlePreviewBlur() {
 }
 
 @media (max-width: 768px) {
+  .container-main {
+    padding: 0 8px;
+  }
+
   .container-main-section {
     flex-direction: column;
     position: relative;
-    height: calc(100vh - 200px);
+    height: calc(100vh - 176px);
     padding-bottom: 80px;
+  }
+
+  .content-rail,
+  .css-editor-pane {
+    display: none;
+  }
+
+  .settings-pane {
+    display: block;
   }
 
   .codeMirror-wrapper,
@@ -2412,8 +2527,8 @@ function handlePreviewBlur() {
       min-height: 100% !important;
       width: 100% !important;
       font-size: 15px;
-      padding: 12px;
-      background-color: var(--background);
+      padding: 34px 12px 12px;
+      background-color: hsl(var(--background));
       overflow-x: hidden;
       touch-action: pan-y;
       position: relative;
@@ -2426,7 +2541,7 @@ function handlePreviewBlur() {
   }
 
   .preview-wrapper {
-    padding: 12px;
+    padding: 34px 12px 12px;
     overflow-y: auto;
     margin-left: 0;
     transform: translateX(0);
@@ -2443,8 +2558,8 @@ function handlePreviewBlur() {
       width: 100%;
       max-width: 100%;
       margin: 0;
-      padding: 16px;
-      background-color: var(--background);
+      padding: 0;
+      background-color: hsl(var(--background));
       min-height: 100%;
       box-sizing: border-box;
       word-wrap: break-word;
@@ -2456,6 +2571,7 @@ function handlePreviewBlur() {
     height: auto;
     min-height: 100%;
     width: 100%;
+    max-width: 100%;
     overflow-x: hidden;
   }
 

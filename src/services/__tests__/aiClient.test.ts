@@ -1,13 +1,19 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
+  AIClient,
   buildApiUrl,
   buildChatCompletionBody,
   buildEmbeddingBody,
+  buildImageBody,
   getCapabilityEndpoint,
   normalizeReasoningEffort,
   toNumber,
   toOptionalNumber,
 } from '../aiClient'
+
+afterEach(() => {
+  vi.restoreAllMocks()
+})
 
 describe(`aiClient helpers`, () => {
   it(`serializes max_tokens as a number`, () => {
@@ -85,6 +91,119 @@ describe(`aiClient helpers`, () => {
       model: `text-embedding-3-small`,
       input: `hello`,
     })
+  })
+
+  it(`serializes new-api compatible image generation fields`, () => {
+    const body = buildImageBody({
+      model: `gpt-image-1`,
+      prompt: `A clean article cover`,
+      n: `1`,
+      size: `1024x1024`,
+      quality: `auto`,
+      responseFormat: `b64_json`,
+      background: `transparent`,
+      outputFormat: `png`,
+      outputCompression: `85`,
+      moderation: `auto`,
+    })
+
+    expect(body).toEqual({
+      model: `gpt-image-1`,
+      prompt: `A clean article cover`,
+      n: 1,
+      size: `1024x1024`,
+      quality: `auto`,
+      response_format: `b64_json`,
+      background: `transparent`,
+      output_format: `png`,
+      output_compression: 85,
+      moderation: `auto`,
+    })
+  })
+
+  it(`uses the selected protocol when creating images`, async () => {
+    const fetchMock = vi.spyOn(globalThis, `fetch`).mockResolvedValue(new Response(JSON.stringify({ data: [] }), {
+      status: 200,
+      headers: { 'Content-Type': `application/json` },
+    }))
+    const client = new AIClient(`https://api.example.com`, `sk-test`, `gemini-native`)
+
+    await client.createImage({
+      model: `imagen-4.0-generate-001`,
+      prompt: `A clean article cover`,
+      n: 1,
+      size: `1024x1024`,
+    })
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      `https://api.example.com/v1beta/models/imagen-4.0-generate-001:predict`,
+      expect.objectContaining({
+        method: `POST`,
+        body: JSON.stringify({
+          instances: [{ prompt: `A clean article cover` }],
+          parameters: {
+            sampleCount: 1,
+            aspectRatio: `1:1`,
+            personGeneration: `allow_adult`,
+          },
+        }),
+      }),
+    )
+  })
+
+  it(`uses the OpenAI-compatible image generation endpoint and payload`, async () => {
+    const fetchMock = vi.spyOn(globalThis, `fetch`).mockResolvedValue(new Response(JSON.stringify({ data: [] }), {
+      status: 200,
+      headers: { 'Content-Type': `application/json` },
+    }))
+    const client = new AIClient(`https://api.example.com`, `sk-test`)
+
+    await client.createImage({
+      model: `gpt-image-1`,
+      prompt: `A clean article cover`,
+      n: `1`,
+      size: `1024x1024`,
+      responseFormat: `b64_json`,
+      outputFormat: `png`,
+    })
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      `https://api.example.com/v1/images/generations`,
+      expect.objectContaining({
+        method: `POST`,
+        body: JSON.stringify({
+          model: `gpt-image-1`,
+          prompt: `A clean article cover`,
+          n: 1,
+          size: `1024x1024`,
+          response_format: `b64_json`,
+          output_format: `png`,
+        }),
+      }),
+    )
+  })
+
+  it(`uses the OpenAI-compatible image edit endpoint`, async () => {
+    const fetchMock = vi.spyOn(globalThis, `fetch`).mockResolvedValue(new Response(JSON.stringify({ data: [] }), {
+      status: 200,
+      headers: { 'Content-Type': `application/json` },
+    }))
+    const client = new AIClient(`https://api.example.com`, `sk-test`)
+
+    await client.createImageEdit({
+      model: `gpt-image-1`,
+      prompt: `Make it brighter`,
+      image: `data:image/png;base64,AAAA`,
+      mimeType: `image/png`,
+    })
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      `https://api.example.com/v1/images/edits`,
+      expect.objectContaining({
+        method: `POST`,
+        body: expect.any(FormData),
+      }),
+    )
   })
 
   it(`normalizes numeric helpers safely`, () => {

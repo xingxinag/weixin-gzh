@@ -9,7 +9,7 @@ import { aiModelsService } from '../services/aiModels'
 import { getProtocolDefinition, listProtocols } from '../services/aiProtocolRegistry'
 
 export type ModelCapability = `chatModel` | `completionModel` | `embeddingModel` | `rerankModel` | `moderationModel` | `imageModel` | `speechModel` | `transcriptionModel` | `videoModel` | `realtimeModel`
-export type CapabilityTest = `models` | `chat` | `mediaRecognition` | `embeddings` | `moderations` | `images` | `speech` | `video` | `realtime`
+export type CapabilityTest = `models` | `chat` | `mediaRecognition` | `embeddings` | `rerank` | `moderations` | `imageGeneration` | `imageEdit` | `speech` | `video` | `realtime`
 
 export interface AIConnectionSettings {
   baseUrl: string
@@ -48,6 +48,18 @@ export interface AIParameters extends AIClientParameters {
   reasoningEffort: ReasoningEffort | ``
 }
 
+export interface AIImageParameters {
+  n: number
+  size: string
+  quality: string
+  responseFormat: string
+  background: string
+  outputFormat: string
+  outputCompression: number | ``
+  moderation: string
+  inputFidelity: string
+}
+
 function readLegacyString(key: string, fallback = ``) {
   return localStorage.getItem(key) || fallback
 }
@@ -69,7 +81,7 @@ function readLegacyAiSettings() {
 function createConnectionDefaults(): AIConnectionSettings {
   const legacy = readLegacyAiSettings()
   return {
-    baseUrl: readLegacyString(`md-ai-api-domain`, legacy.apiDomain || `https://api.puzhehei.top`),
+    baseUrl: readLegacyString(`md-ai-api-domain`, legacy.apiDomain || `https://api.xiaohuxing.eu.org`),
     apiKey: readLegacyString(`md-ai-api-key`, legacy.apiKey || ``),
     apiStyle: `openai-compatible`,
     mode: legacy.connection?.mode === `worker-proxy` ? `worker-proxy` : `direct`,
@@ -104,6 +116,21 @@ function createParameterDefaults(): AIParameters {
     presencePenalty: toNumber(legacy.presencePenalty, 0),
     frequencyPenalty: toNumber(legacy.frequencyPenalty, 0),
     reasoningEffort: legacy.reasoningEffort === `low` || legacy.reasoningEffort === `medium` || legacy.reasoningEffort === `high` ? legacy.reasoningEffort : ``,
+  }
+}
+
+function createImageParameterDefaults(): AIImageParameters {
+  const legacy = readLegacyAiSettings()
+  return {
+    n: Math.max(1, Math.round(toNumber(legacy.imageParameters?.n, 1))),
+    size: legacy.imageParameters?.size || `1024x1024`,
+    quality: legacy.imageParameters?.quality || `auto`,
+    responseFormat: legacy.imageParameters?.responseFormat || `url`,
+    background: legacy.imageParameters?.background || ``,
+    outputFormat: legacy.imageParameters?.outputFormat || ``,
+    outputCompression: legacy.imageParameters?.outputCompression ?? ``,
+    moderation: legacy.imageParameters?.moderation || ``,
+    inputFidelity: legacy.imageParameters?.inputFidelity || ``,
   }
 }
 
@@ -152,6 +179,7 @@ export const useAIStore = defineStore(`ai`, () => {
   const defaults = useStorage<AIDefaultModels>(`md-ai-default-models`, createModelDefaults())
   const capabilities = useStorage<AICapabilitySettings>(`md-ai-capabilities`, createCapabilityDefaults())
   const parameters = useStorage<AIParameters>(`md-ai-parameters`, createParameterDefaults())
+  const imageParameters = useStorage<AIImageParameters>(`md-ai-image-parameters`, createImageParameterDefaults())
   const presetWords = useStorage<string[]>(`md-ai-preset-words`, createPresetDefaults())
   const customModel = useStorage(`md-ai-custom-model`, readLegacyString(`md-ai-custom-model`, ``))
   const customModels = useStorage<string[]>(`md-ai-custom-models`, [])
@@ -342,6 +370,18 @@ export const useAIStore = defineStore(`ai`, () => {
     }
   }
 
+  function updateImageParameter<K extends keyof AIImageParameters>(key: K, value: AIImageParameters[K] | string | number) {
+    if (key === `n`) {
+      imageParameters.value.n = Math.max(1, Math.round(toNumber(value, 1)))
+      return
+    }
+    if (key === `outputCompression`) {
+      imageParameters.value.outputCompression = value === `` ? `` : Math.max(0, Math.min(100, Math.round(toNumber(value, 85))))
+      return
+    }
+    ;(imageParameters.value[key] as string) = String(value)
+  }
+
   function addPresetWord(word: string) {
     presetWords.value.push(word)
   }
@@ -386,6 +426,7 @@ export const useAIStore = defineStore(`ai`, () => {
       capabilities: capabilities.value,
       defaults: defaults.value,
       parameters: parameters.value,
+      imageParameters: imageParameters.value,
       presetWords: presetWords.value,
       customModels: customModels.value,
       customModel: customModel.value,
@@ -408,29 +449,45 @@ export const useAIStore = defineStore(`ai`, () => {
   }
 
   async function generateImage(input: { prompt: string, n?: number, size?: string }) {
+    const capProtocol = getCapabilityProtocol(`imageGeneration`)
     const capEndpoint = getCapabilityEndpoint(`imageGeneration`)
     const baseUrl = capEndpoint || connection.value.baseUrl
     const apiKey = connection.value.mode === `worker-proxy` ? `proxy-mode` : connection.value.apiKey
-    const client = new AIClient(baseUrl, apiKey, connection.value.protocol)
+    const client = new AIClient(baseUrl, apiKey, capProtocol)
     const response = await client.createImage({
       model: getCapabilityModel(`imageGeneration`) || defaults.value.imageModel || `dall-e-3`,
       prompt: input.prompt,
-      n: input.n || 1,
-      size: input.size || `1024x1024`,
+      n: input.n || imageParameters.value.n,
+      size: input.size || imageParameters.value.size,
+      quality: imageParameters.value.quality,
+      responseFormat: imageParameters.value.responseFormat,
+      background: imageParameters.value.background,
+      outputFormat: imageParameters.value.outputFormat,
+      outputCompression: imageParameters.value.outputCompression,
+      moderation: imageParameters.value.moderation,
     })
     return response.json()
   }
 
   async function editImage(input: { prompt: string, image: string, mimeType?: string }) {
+    const capProtocol = getCapabilityProtocol(`imageEdit`)
     const capEndpoint = getCapabilityEndpoint(`imageEdit`)
     const baseUrl = capEndpoint || connection.value.baseUrl
     const apiKey = connection.value.mode === `worker-proxy` ? `proxy-mode` : connection.value.apiKey
-    const client = new AIClient(baseUrl, apiKey, connection.value.protocol)
+    const client = new AIClient(baseUrl, apiKey, capProtocol)
     const response = await client.createImageEdit({
       model: getCapabilityModel(`imageEdit`) || `gpt-image-1`,
       prompt: input.prompt,
       image: input.image,
       mimeType: input.mimeType,
+      n: imageParameters.value.n,
+      size: imageParameters.value.size,
+      quality: imageParameters.value.quality,
+      responseFormat: imageParameters.value.responseFormat,
+      background: imageParameters.value.background,
+      outputFormat: imageParameters.value.outputFormat,
+      outputCompression: imageParameters.value.outputCompression,
+      inputFidelity: imageParameters.value.inputFidelity,
     })
     return response.json()
   }
@@ -491,15 +548,33 @@ export const useAIStore = defineStore(`ai`, () => {
           result = payload.results ? `审查接口调用成功` : `审查接口响应成功`
           break
         }
-        case `images`: {
-          const response = await client.createImage({
-            model: defaults.value.imageModel || `dall-e-3`,
+        case `rerank`: {
+          const response = await client.createRerank({
+            model: defaults.value.rerankModel || `jina-reranker-v2-base-multilingual`,
+            query: `wechat article`,
+            documents: [`wechat article editor`, `weather report`],
+            topN: 1,
+          })
+          const payload = await response.json() as any
+          result = `重排序接口调用成功，结果数 ${payload.results?.length || 0}`
+          break
+        }
+        case `imageGeneration`: {
+          const payload = await generateImage({
             prompt: `A minimal geometric logo`,
             n: 1,
             size: `1024x1024`,
-          })
-          const payload = await response.json() as any
-          result = payload.data?.[0]?.url ? `图像接口调用成功` : `图像接口响应成功`
+          }) as any
+          result = payload.data?.[0]?.url || payload.data?.[0]?.b64_json ? `图像接口调用成功` : `图像接口响应成功`
+          break
+        }
+        case `imageEdit`: {
+          const payload = await editImage({
+            prompt: `Make this single pixel blue`,
+            image: `data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4////fwAJ+wP9KobjigAAAABJRU5ErkJggg==`,
+            mimeType: `image/png`,
+          }) as any
+          result = payload.data?.[0]?.url || payload.data?.[0]?.b64_json ? `图片编辑接口调用成功` : `图片编辑接口响应成功`
           break
         }
         case `speech`: {
@@ -566,6 +641,7 @@ export const useAIStore = defineStore(`ai`, () => {
     supportedCapabilities,
     defaults,
     parameters,
+    imageParameters,
     apiKey,
     apiDomain,
     selectedModel,
@@ -593,6 +669,7 @@ export const useAIStore = defineStore(`ai`, () => {
     setTemperature,
     setMaxLength,
     updateParameter,
+    updateImageParameter,
     setGenerating,
     fetchModels,
     addCustomModel,

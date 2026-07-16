@@ -1,6 +1,6 @@
 import path from 'node:path'
 import vue from '@vitejs/plugin-vue'
-import { defineConfig } from 'vitest/config'
+import { configDefaults, defineConfig } from 'vitest/config'
 
 export default defineConfig({
   plugins: [vue()],
@@ -11,6 +11,11 @@ export default defineConfig({
   },
   test: {
     environment: `jsdom`,
+    exclude: [
+      ...configDefaults.exclude,
+      `**/.worktrees/**`,
+    ],
     globals: true,
+    setupFiles: [`./vitest.setup.ts`],
   },
 })

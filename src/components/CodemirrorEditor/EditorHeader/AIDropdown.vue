@@ -25,6 +25,7 @@ const {
   supportedCapabilities,
   defaults,
   parameters,
+  imageParameters,
   presetWords,
   customModels,
   isGenerating,
@@ -59,8 +60,10 @@ const capabilityTests: Array<{ key: CapabilityTest, label: string, endpoint: str
   { key: `chat`, label: `聊天`, endpoint: `/v1/chat/completions` },
   { key: `mediaRecognition`, label: `媒体识别`, endpoint: `/v1beta/models:generateContent` },
   { key: `embeddings`, label: `嵌入`, endpoint: `/v1/embeddings` },
+  { key: `rerank`, label: `重排序`, endpoint: `/v1/rerank` },
   { key: `moderations`, label: `审查`, endpoint: `/v1/moderations` },
-  { key: `images`, label: `图像`, endpoint: `/v1/images/generations` },
+  { key: `imageGeneration`, label: `图像生成`, endpoint: `/v1/images/generations` },
+  { key: `imageEdit`, label: `图像编辑`, endpoint: `/v1/images/edits` },
   { key: `speech`, label: `语音合成`, endpoint: `/v1/audio/speech` },
   { key: `video`, label: `视频`, endpoint: `/v1/videos` },
   { key: `realtime`, label: `实时语音`, endpoint: `/v1/realtime/sessions` },
@@ -70,8 +73,10 @@ const capabilityMap: Record<string, string> = {
   chat: `chat`,
   mediaRecognition: `mediaRecognition`,
   embeddings: `embedding`,
+  rerank: `rerank`,
   moderations: `moderation`,
-  images: `image`,
+  imageGeneration: `imageGeneration`,
+  imageEdit: `imageEdit`,
   speech: `speech`,
   video: `video`,
   realtime: `realtime`,
@@ -102,6 +107,16 @@ const capabilityOverrideFields = [
 
 function resolveEndpoint(path: string) {
   return aiStore.getResolvedEndpoint(path)
+}
+
+function resolveCapabilityTestEndpoint(item: { key: CapabilityTest, endpoint: string }) {
+  if (item.key === `mediaRecognition` && connection.value.protocol === `gemini-native`) {
+    return resolveEndpoint(`/v1beta/models/${defaults.value.chatModel || `gemini-2.5-flash`}:generateContent`)
+  }
+  if (item.key === `imageGeneration` && connection.value.protocol === `gemini-native`) {
+    return resolveEndpoint(`/v1beta/models/${defaults.value.imageModel || `imagen-4.0-generate-001`}:predict`)
+  }
+  return resolveEndpoint(item.endpoint)
 }
 
 async function saveSettings() {
@@ -287,7 +302,7 @@ watch(settingsDialogVisible, async (newValue) => {
 
           <div class="grid gap-2">
             <Label for="apiDomain">Base URL</Label>
-            <Input id="apiDomain" v-model="apiDomain" :placeholder="usingProxy ? 'https://your-editor-domain.example.com/api' : 'https://your-newapi.example.com'" />
+            <Input id="apiDomain" v-model="apiDomain" :placeholder="usingProxy ? 'https://your-editor-domain.example.com/api' : 'https://api.xiaohuxing.eu.org'" />
             <p class="text-muted-foreground text-xs">
               {{ usingProxy ? '代理模式请填写你的站点 /api 根地址，例如 https://your-domain.example.com/api。' : '直连模式请填写 OpenAI 兼容根地址，能力端点会自动拼接。' }}
             </p>
@@ -298,7 +313,7 @@ watch(settingsDialogVisible, async (newValue) => {
             <p><span class="font-medium">当前协议：</span>{{ connection.protocol }}</p>
             <p><span class="font-medium">连接模式：</span>{{ connection.mode }}</p>
             <p><span class="font-medium">支持能力：</span>{{ supportedCapabilities.join(', ') }}</p>
-            <p><span class="font-medium">当前聊天端点：</span>{{ resolveEndpoint(connection.protocol === 'openai-responses' ? '/v1/responses' : connection.protocol === 'anthropic-native' ? '/v1/messages' : connection.protocol === 'gemini-native' ? '/v1beta/models:generateContent' : '/v1/chat/completions') }}</p>
+            <p><span class="font-medium">当前聊天端点：</span>{{ resolveEndpoint(connection.protocol === 'openai-responses' ? '/v1/responses' : connection.protocol === 'anthropic-native' ? '/v1/messages' : connection.protocol === 'gemini-native' ? `/v1beta/models/${defaults.chatModel || 'gemini-2.5-flash'}:generateContent` : '/v1/chat/completions') }}</p>
             <p><span class="font-medium">当前模型列表端点：</span>{{ resolveEndpoint('/v1/models') }}</p>
           </div>
         </TabsContent>
@@ -397,6 +412,135 @@ watch(settingsDialogVisible, async (newValue) => {
             <Label>系统提示词</Label>
             <Input v-model="presetWords[0]" placeholder="给聊天模型的 system prompt" />
           </div>
+
+          <div class="grid gap-4 border rounded-md p-4">
+            <div>
+              <p class="font-medium">
+                图像生成参数
+              </p>
+              <p class="text-muted-foreground text-xs">
+                兼容 New API / OpenAI 图像端点；Gemini Imagen 会自动把尺寸映射为 aspectRatio、把质量映射为 imageSize。
+              </p>
+            </div>
+            <div class="grid gap-4 md:grid-cols-2">
+              <div class="grid gap-2">
+                <Label for="imageN">数量</Label>
+                <Input id="imageN" :model-value="imageParameters.n" type="number" min="1" max="128" @update:model-value="value => aiStore.updateImageParameter('n', value)" />
+              </div>
+              <div class="grid gap-2">
+                <Label for="imageSize">尺寸</Label>
+                <select id="imageSize" v-model="imageParameters.size" class="border-input bg-background h-10 w-full flex border rounded-md px-3 py-2 text-sm">
+                  <option value="1024x1024">
+                    1024x1024
+                  </option>
+                  <option value="1024x1792">
+                    1024x1792
+                  </option>
+                  <option value="1792x1024">
+                    1792x1024
+                  </option>
+                  <option value="1536x1024">
+                    1536x1024
+                  </option>
+                  <option value="1024x1536">
+                    1024x1536
+                  </option>
+                </select>
+              </div>
+              <div class="grid gap-2">
+                <Label for="imageQuality">质量</Label>
+                <select id="imageQuality" v-model="imageParameters.quality" class="border-input bg-background h-10 w-full flex border rounded-md px-3 py-2 text-sm">
+                  <option value="">
+                    不发送
+                  </option>
+                  <option value="auto">
+                    auto
+                  </option>
+                  <option value="standard">
+                    standard
+                  </option>
+                  <option value="hd">
+                    hd
+                  </option>
+                  <option value="low">
+                    low
+                  </option>
+                  <option value="medium">
+                    medium
+                  </option>
+                  <option value="high">
+                    high
+                  </option>
+                </select>
+              </div>
+              <div class="grid gap-2">
+                <Label for="imageResponseFormat">返回格式</Label>
+                <select id="imageResponseFormat" v-model="imageParameters.responseFormat" class="border-input bg-background h-10 w-full flex border rounded-md px-3 py-2 text-sm">
+                  <option value="">
+                    不发送
+                  </option>
+                  <option value="url">
+                    url
+                  </option>
+                  <option value="b64_json">
+                    b64_json
+                  </option>
+                </select>
+              </div>
+              <div class="grid gap-2">
+                <Label for="imageBackground">背景</Label>
+                <select id="imageBackground" v-model="imageParameters.background" class="border-input bg-background h-10 w-full flex border rounded-md px-3 py-2 text-sm">
+                  <option value="">
+                    不发送
+                  </option>
+                  <option value="auto">
+                    auto
+                  </option>
+                  <option value="transparent">
+                    transparent
+                  </option>
+                  <option value="opaque">
+                    opaque
+                  </option>
+                </select>
+              </div>
+              <div class="grid gap-2">
+                <Label for="imageOutputFormat">输出格式</Label>
+                <select id="imageOutputFormat" v-model="imageParameters.outputFormat" class="border-input bg-background h-10 w-full flex border rounded-md px-3 py-2 text-sm">
+                  <option value="">
+                    不发送
+                  </option>
+                  <option value="png">
+                    png
+                  </option>
+                  <option value="jpeg">
+                    jpeg
+                  </option>
+                  <option value="webp">
+                    webp
+                  </option>
+                </select>
+              </div>
+              <div class="grid gap-2">
+                <Label for="imageOutputCompression">压缩质量</Label>
+                <Input id="imageOutputCompression" :model-value="imageParameters.outputCompression" type="number" min="0" max="100" placeholder="jpeg/webp 可用" @update:model-value="value => aiStore.updateImageParameter('outputCompression', value)" />
+              </div>
+              <div class="grid gap-2">
+                <Label for="imageInputFidelity">编辑保真度</Label>
+                <select id="imageInputFidelity" v-model="imageParameters.inputFidelity" class="border-input bg-background h-10 w-full flex border rounded-md px-3 py-2 text-sm">
+                  <option value="">
+                    不发送
+                  </option>
+                  <option value="low">
+                    low
+                  </option>
+                  <option value="high">
+                    high
+                  </option>
+                </select>
+              </div>
+            </div>
+          </div>
         </TabsContent>
 
         <TabsContent value="capabilities" class="grid gap-4">
@@ -442,7 +586,7 @@ watch(settingsDialogVisible, async (newValue) => {
                     {{ item.label }}
                   </p>
                   <p class="text-muted-foreground break-all text-xs">
-                    {{ resolveEndpoint(item.endpoint) }}
+                    {{ resolveCapabilityTestEndpoint(item) }}
                   </p>
                 </div>
                 <Button variant="outline" :disabled="isTestingCapability[item.key]" @click="runCapabilityTest(item.key)">
