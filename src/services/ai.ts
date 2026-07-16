@@ -96,6 +96,12 @@ async function emitJsonResponseText(response: Response, protocol: string, onToke
   onToken?.(text)
 }
 
+function shouldRetryWithoutStream(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error)
+  return /API请求失败 \((?:400|404|405|422|503)\)/.test(message)
+    || /stream|流式|无可用渠道|No available channel|model_not_found/i.test(message)
+}
+
 export interface AIStreamOptions {
   prompt: string | Array<{ role: string, content: string }> | {
     system?: string
@@ -137,7 +143,7 @@ export async function streamAIContent({
 
     const client = new AIClient(aiStore.apiDomain, aiStore.apiKey, aiStore.connection.protocol)
     const streamEnabled = aiStore.connection.protocol === `openai-chat-completions`
-    const response = await client.createChatCompletion({
+    const requestPayload = {
       model: validatedModel,
       messages: [
         ...aiStore.presetWords.map(word => ({ role: `system`, content: word })),
@@ -153,9 +159,25 @@ export async function streamAIContent({
       ],
       parameters: aiStore.parameters,
       stream: streamEnabled,
-    })
+    }
+    let response: Response
+    let useStreamResponse = streamEnabled
+    try {
+      response = await client.createChatCompletion(requestPayload)
+    }
+    catch (error) {
+      if (!streamEnabled || !shouldRetryWithoutStream(error)) {
+        throw error
+      }
+      console.warn(`流式 AI 请求失败，已自动降级为非流式请求:`, error)
+      useStreamResponse = false
+      response = await client.createChatCompletion({
+        ...requestPayload,
+        stream: false,
+      })
+    }
 
-    if (!streamEnabled || response.headers.get(`Content-Type`)?.includes(`application/json`)) {
+    if (!useStreamResponse || response.headers.get(`Content-Type`)?.includes(`application/json`)) {
       await emitJsonResponseText(response, aiStore.connection.protocol, onToken)
       aiStore.setGenerating(false)
       onFinish?.()
